@@ -51,8 +51,7 @@ git clone https://github.com/your-org/musica.git
 cd rpi-image-gen && sudo ./install_deps.sh && cd ..
 
 # Build
-ZEROTIER_NETWORK_ID=yournetworkid16hex \
-  make -C musica build-rpi-image
+make -C musica build-rpi-image
 
 # Flash
 sudo rpi-imager --cli musica/output/musica-pi5.img /dev/mmcblk0
@@ -67,7 +66,7 @@ Requires Docker Desktop (Mac) or Docker + `qemu-user-static` (Linux).
 docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
 # Build image
-make build-docker ZEROTIER_NETWORK_ID=yournetworkid16hex
+make build-docker
 
 # Output
 ls output/musica-pi5.img
@@ -78,25 +77,29 @@ ls output/musica-pi5.img
 Push to `main` or open a PR touching `rpi-image/**` to trigger
 `.github/workflows/build-image.yml`. The workflow runs Option B on an x86 runner via QEMU.
 
-Add your ZeroTier network ID as a GitHub Actions secret named `ZEROTIER_NETWORK_ID`.
-
-The built image is uploaded as an artifact (retained 7 days) on `main` branch pushes.
+The built image is uploaded as an artifact on `main` branch pushes. ZeroTier network ID
+is configured after flashing — no secrets needed in CI.
 
 ---
 
 ## First boot checklist
 
 1. Flash `output/musica-pi5.img` to an SD card with Raspberry Pi Imager.
-2. Mount the boot/root partition and edit `/opt/musica/.env` (copied from `.env.template` on first boot if absent):
+2. The FAT32 boot partition will be visible from any OS after flashing. Copy `musica.env.template`
+   → `musica.env` on the boot partition and fill in your values:
    ```env
-   LASTFM_ENABLED=true
-   LASTFM_APIKEY=your_key
-   LASTFM_SECRET=your_secret
-   NAVIDROME_ADMIN_PASS=a_strong_password
+   ZEROTIER_NETWORK_ID=your16hexnetworkid  # find it at my.zerotier.com
+
+   LASTFM_ENABLED=false                    # optional scrobbling
+   LASTFM_APIKEY=
+   LASTFM_SECRET=
+
+   NAVIDROME_ADMIN_USER=admin
+   NAVIDROME_ADMIN_PASS=changeme           # change this!
    ```
 3. Boot the Pi. On first boot:
-   - `zerotier-join-network.service` — joins your ZeroTier network (oneshot, self-disabling)
-   - `musica-start.service` — pulls Docker images and starts the stack (oneshot)
+   - `zerotier-join-network.service` — reads `ZEROTIER_NETWORK_ID` from `musica.env` and joins your network (oneshot, self-disabling)
+   - `musica-start.service` — copies `musica.env` → `/opt/musica/.env`, pulls Docker images, and starts the stack (oneshot)
 4. Approve the device in [ZeroTier Central](https://my.zerotier.com).
 5. Access Navidrome at `http://<zerotier-ip>:4533` from any device on your ZeroTier network.
 6. Check `docker ps` on the Pi to confirm `navidrome` and `dab` are running.

@@ -27,15 +27,10 @@ mmdebstrap:
 
     # Drop a musica.env template on the boot partition so users know what to fill in.
     # The FAT32 boot partition is visible from Windows/macOS/Linux after flashing.
+    # Source of truth for template fields: rpi-image/config/musica.env.template
     - |
       mkdir -p "$1/boot/firmware"
-      cat > "$1/boot/firmware/musica.env.template" << 'ENVFILE'
-      # musica configuration — copy this file to musica.env and fill in your values.
-      # The boot partition is visible from any OS after flashing the SD card.
-
-      # Your 16-character ZeroTier network ID (find it at my.zerotier.com)
-      ZEROTIER_NETWORK_ID=
-      ENVFILE
+      cp "$SRCROOT/musica.env.template" "$1/boot/firmware/musica.env.template"
 
     # First-boot join script: reads network ID from /boot/firmware/musica.env
     - |
