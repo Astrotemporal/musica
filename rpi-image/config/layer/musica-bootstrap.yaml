@@ -108,7 +108,7 @@ mmdebstrap:
       [Service]
       Type=oneshot
       WorkingDirectory=/opt/musica
-      ExecStartPre=/bin/sh -c '[ -f /opt/musica/.env ] || cp /opt/musica/.env.template /opt/musica/.env'
+      ExecStartPre=/bin/sh -c '[ -f /opt/musica/.env ] || cp /boot/firmware/musica.env /opt/musica/.env 2>/dev/null || cp /opt/musica/.env.template /opt/musica/.env'
       ExecStart=/usr/bin/docker compose pull
       ExecStart=/usr/bin/docker compose up -d
       ExecStartPost=/usr/bin/touch /opt/musica/.stack-started
