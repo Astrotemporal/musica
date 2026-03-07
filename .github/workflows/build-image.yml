@@ -6,7 +6,9 @@
 # Running on x86 via QEMU is unsupported upstream and will be significantly
 # slower (~30-60 min), but works for CI validation.
 #
-# For faster builds, consider a self-hosted arm64 runner (e.g. your existing Pi).
+# FASTER OPTION: switch `runs-on` to `ubuntu-24.04-arm` for a native arm64
+# GitHub-hosted runner (requires GitHub Team/Enterprise plan), or use a
+# self-hosted arm64 runner (e.g. your Pi) for the fastest builds.
 
 name: Build musica Pi Image
 
@@ -25,11 +27,22 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+      # QEMU arm64 emulation is memory-hungry. Add swap so mmdebstrap's apt-get
+      # doesn't OOM when parsing large package lists inside the emulated chroot.
+      - name: Add swap space
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "Swap after:"
+          free -h
 
       # Enable QEMU for arm64 emulation on the x86 runner
       - name: Set up QEMU binfmt
