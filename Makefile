@@ -1,4 +1,7 @@
 .PHONY: help build-rpi-image build-docker clean
+# ZeroTier network ID is no longer baked into the image at build time.
+# After flashing, copy musica.env.template -> musica.env on the boot partition
+# and set ZEROTIER_NETWORK_ID=<your-16-char-id>.
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) \
@@ -15,7 +18,6 @@ build-docker: ## Build image inside Docker (Apple Silicon / x86 via QEMU)
 	docker volume rm musica-build-vol 2>/dev/null || true
 	docker volume create musica-build-vol
 	docker run --rm --privileged --platform linux/arm64 \
-	  -e ZEROTIER_NETWORK_ID=$(ZEROTIER_NETWORK_ID) \
 	  -v $(PWD)/rpi-image:/workspace/rpi-image \
 	  -v musica-build-vol:/rpi-output \
 	  rpi-image-gen-builder \

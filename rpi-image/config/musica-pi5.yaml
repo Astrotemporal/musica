@@ -3,7 +3,10 @@
 # Targets: Debian Bookworm arm64, Pi 5 hardware.
 #
 # Build (inside privileged Docker container):
-#   ZEROTIER_NETWORK_ID=<id> make build-docker
+#   make build-docker
+#
+# After flashing, copy musica.env.template -> musica.env on the boot partition
+# and set ZEROTIER_NETWORK_ID=<your-16-char-id>. No rebuild needed.
 #
 # See companion README for full build instructions.
 
@@ -40,8 +43,3 @@ device:
   timezone: America/New_York
   user1: musica
 
-# ---------------------------------------------------------------------------
-# ZeroTier — inject network ID at build time via ZEROTIER_NETWORK_ID env var
-# ---------------------------------------------------------------------------
-zerotier:
-  network: "${ZEROTIER_NETWORK_ID}"

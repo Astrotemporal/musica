@@ -56,7 +56,6 @@ jobs:
           docker run --rm \
             --platform linux/arm64 \
             --privileged \
-            -e ZEROTIER_NETWORK_ID=${{ secrets.ZEROTIER_NETWORK_ID || 'deadbeef12345678' }} \
             -v ${{ github.workspace }}/rpi-image:/workspace/rpi-image \
             -v ${{ github.workspace }}/output:/workspace/output \
             rpi-image-gen-builder \

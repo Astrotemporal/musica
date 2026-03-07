@@ -1,19 +1,12 @@
 # layer/zerotier.yaml
-# Installs ZeroTier One and auto-joins a network on first boot.
-# Reads IGconf_zerotier_network for the network ID.
+# Installs ZeroTier One. On first boot, reads ZEROTIER_NETWORK_ID from
+# /boot/firmware/musica.env (the FAT32 boot partition — editable from any OS
+# after flashing) and joins the specified network.
 
 # METABEGIN
 # X-Env-Layer-Name: zerotier
-# X-Env-Layer-Desc: Installs ZeroTier One VPN and joins a network on first boot
-# X-Env-Layer-Version: 1.0.0
-#
-# X-Env-VarPrefix: zerotier
-#
-# X-Env-Var-network:
-# X-Env-Var-network-Desc: ZeroTier network ID to join on first boot
-# X-Env-Var-network-Required: y
-# X-Env-Var-network-Valid: string
-# X-Env-Var-network-Set: n
+# X-Env-Layer-Desc: Installs ZeroTier One VPN; joins network ID from boot partition on first boot
+# X-Env-Layer-Version: 2.0.0
 # METAEND
 ---
 mmdebstrap:
@@ -32,16 +25,43 @@ mmdebstrap:
       chroot "$1" apt-get install -y zerotier-one
       chroot "$1" systemctl enable zerotier-one
 
-    # Drop a first-boot join script so the network ID doesn't need to be
-    # hardcoded into the image (systemd oneshot runs zerotier-join on first boot)
+    # Drop a musica.env template on the boot partition so users know what to fill in.
+    # The FAT32 boot partition is visible from Windows/macOS/Linux after flashing.
     - |
-      NETWORK_ID="$IGconf_zerotier_network"
-      cat > "$1/usr/local/bin/zerotier-join-network" << EOF
+      mkdir -p "$1/boot/firmware"
+      cat > "$1/boot/firmware/musica.env.template" << 'ENVFILE'
+      # musica configuration — copy this file to musica.env and fill in your values.
+      # The boot partition is visible from any OS after flashing the SD card.
+
+      # Your 16-character ZeroTier network ID (find it at my.zerotier.com)
+      ZEROTIER_NETWORK_ID=
+      ENVFILE
+
+    # First-boot join script: reads network ID from /boot/firmware/musica.env
+    - |
+      cat > "$1/usr/local/bin/zerotier-join-network" << 'SCRIPT'
       #!/bin/sh
-      zerotier-cli join ${NETWORK_ID}
-      # Disable self after first successful join
+      set -e
+
+      ENV_FILE=/boot/firmware/musica.env
+      if [ ! -f "$ENV_FILE" ]; then
+        echo "zerotier-join: $ENV_FILE not found — skipping network join" >&2
+        echo "  Create $ENV_FILE with ZEROTIER_NETWORK_ID=<your-16-char-id>" >&2
+        exit 0
+      fi
+
+      # Source the env file (ignore comments and blank lines)
+      . "$ENV_FILE"
+
+      if [ -z "$ZEROTIER_NETWORK_ID" ]; then
+        echo "zerotier-join: ZEROTIER_NETWORK_ID not set in $ENV_FILE — skipping" >&2
+        exit 0
+      fi
+
+      echo "zerotier-join: joining network $ZEROTIER_NETWORK_ID"
+      zerotier-cli join "$ZEROTIER_NETWORK_ID"
       systemctl disable zerotier-join-network.service
-      EOF
+      SCRIPT
       chmod +x "$1/usr/local/bin/zerotier-join-network"
 
     - |
