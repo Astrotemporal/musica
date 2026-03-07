@@ -1,0 +1,5 @@
+# Build output
+output/
+
+# rpi-image-gen tool (cloned locally for native arm64 builds)
+rpi-image-gen/
