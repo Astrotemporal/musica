@@ -31,13 +31,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fdisk \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone rpi-image-gen (pin to a known-good commit in production)
-RUN git clone --depth 1 https://github.com/raspberrypi/rpi-image-gen.git /workspace/rpi-image-gen
+# Clone rpi-image-gen and install its own tool dependencies
+RUN git clone --depth 1 https://github.com/raspberrypi/rpi-image-gen.git /workspace/rpi-image-gen \
+    && cd /workspace/rpi-image-gen \
+    && apt-get update \
+    && sudo ./install_deps.sh \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/rpi-image-gen
-
-# Install rpi-image-gen's own tool dependencies
-RUN sudo ./install_deps.sh
 
 # Default command — override in CI
 CMD ["./rpi-image-gen", "--help"]

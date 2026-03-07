@@ -3,12 +3,12 @@
 # Enables the docker daemon via systemd.
 # Also adds the default user to the docker group so sudo is not needed.
 
-# --- METASTART ---
-# X-Layer-Name: docker
-# X-Layer-Description: Installs Docker CE engine and compose plugin, enables daemon
-# X-Layer-Version: 1
-# --- METAEND ---
-
+# METABEGIN
+# X-Env-Layer-Name: docker
+# X-Env-Layer-Desc: Installs Docker CE engine and compose plugin, enables daemon
+# X-Env-Layer-Version: 1.0.0
+# METAEND
+---
 mmdebstrap:
   packages:
     - ca-certificates
@@ -27,8 +27,8 @@ mmdebstrap:
       ARCH=$(dpkg --print-architecture)
       CODENAME=$(. "$1/etc/os-release" && echo "$VERSION_CODENAME")
       cat > "$1/etc/apt/sources.list.d/docker.list" << EOF
-deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian ${CODENAME} stable
-EOF
+      deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian ${CODENAME} stable
+      EOF
 
     # Install Docker packages inside the chroot
     - |

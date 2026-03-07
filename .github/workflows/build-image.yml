@@ -63,9 +63,9 @@ jobs:
             bash -c "
               cd /workspace/rpi-image-gen && \
               ./rpi-image-gen build \
-                -S /workspace/rpi-image \
+                -S /workspace/rpi-image/config \
                 -c /workspace/rpi-image/config/musica-pi5.yaml \
-                -o /workspace/output
+                -B /workspace/output
             "
 
       # Smoke test: verify the image was produced and is a reasonable size

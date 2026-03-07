@@ -2,16 +2,20 @@
 # Installs ZeroTier One and auto-joins a network on first boot.
 # Reads IGconf_zerotier_network for the network ID.
 
-# --- METASTART ---
-# X-Layer-Name: zerotier
-# X-Layer-Description: Installs ZeroTier One VPN and joins a network on first boot
-# X-Layer-Version: 1
-# X-Env-Var-zerotier_network-Description: ZeroTier network ID to join on first boot
-# X-Env-Var-zerotier_network-Required: y
-# X-Env-Var-zerotier_network-Valid: regex:^[0-9a-f]{16}$
-# X-Env-Var-zerotier_network-Set: n
-# --- METAEND ---
-
+# METABEGIN
+# X-Env-Layer-Name: zerotier
+# X-Env-Layer-Desc: Installs ZeroTier One VPN and joins a network on first boot
+# X-Env-Layer-Version: 1.0.0
+#
+# X-Env-VarPrefix: zerotier
+#
+# X-Env-Var-network:
+# X-Env-Var-network-Desc: ZeroTier network ID to join on first boot
+# X-Env-Var-network-Required: y
+# X-Env-Var-network-Valid: string
+# X-Env-Var-network-Set: n
+# METAEND
+---
 mmdebstrap:
   packages:
     - curl
@@ -33,27 +37,27 @@ mmdebstrap:
     - |
       NETWORK_ID="$IGconf_zerotier_network"
       cat > "$1/usr/local/bin/zerotier-join-network" << EOF
-#!/bin/sh
-zerotier-cli join ${NETWORK_ID}
-# Disable self after first successful join
-systemctl disable zerotier-join-network.service
-EOF
+      #!/bin/sh
+      zerotier-cli join ${NETWORK_ID}
+      # Disable self after first successful join
+      systemctl disable zerotier-join-network.service
+      EOF
       chmod +x "$1/usr/local/bin/zerotier-join-network"
 
     - |
       cat > "$1/etc/systemd/system/zerotier-join-network.service" << 'EOF'
-[Unit]
-Description=Join ZeroTier network on first boot
-After=zerotier-one.service network-online.target
-Wants=network-online.target
-ConditionPathExists=!/var/lib/zerotier-one/networks.d/*.conf
+      [Unit]
+      Description=Join ZeroTier network on first boot
+      After=zerotier-one.service network-online.target
+      Wants=network-online.target
+      ConditionPathExists=!/var/lib/zerotier-one/networks.d/*.conf
 
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/zerotier-join-network
-RemainAfterExit=yes
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/zerotier-join-network
+      RemainAfterExit=yes
 
-[Install]
-WantedBy=multi-user.target
-EOF
+      [Install]
+      WantedBy=multi-user.target
+      EOF
       chroot "$1" systemctl enable zerotier-join-network.service
