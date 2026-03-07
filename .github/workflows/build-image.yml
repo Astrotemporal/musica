@@ -33,14 +33,15 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # QEMU arm64 emulation is memory-hungry. Add swap so mmdebstrap's apt-get
-      # doesn't OOM when parsing large package lists inside the emulated chroot.
+      # QEMU arm64 emulation is memory-hungry. Add swap on /mnt (ephemeral disk)
+      # so mmdebstrap's apt-get doesn't OOM inside the emulated chroot.
+      # Note: GitHub runners already have /swapfile in use — use /mnt instead.
       - name: Add swap space
         run: |
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          sudo fallocate -l 8G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
           echo "Swap after:"
           free -h
 
@@ -103,5 +104,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: musica-pi5-image
-          path: output/*.img
+          path: output/**/*.img
           retention-days: 7
