@@ -1,0 +1,95 @@
+# .github/workflows/build-image.yml
+# Builds the musica Pi 5 image inside a privileged arm64 Docker container
+# using QEMU binfmt emulation on a GitHub-hosted x86 runner.
+#
+# NOTE: rpi-image-gen officially supports native arm64 Debian hosts.
+# Running on x86 via QEMU is unsupported upstream and will be significantly
+# slower (~30-60 min), but works for CI validation.
+#
+# For faster builds, consider a self-hosted arm64 runner (e.g. your existing Pi).
+
+name: Build musica Pi Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rpi-image/**'
+      - '.github/workflows/build-image.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'rpi-image/**'
+  workflow_dispatch:    # allow manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # Enable QEMU for arm64 emulation on the x86 runner
+      - name: Set up QEMU binfmt
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build the rpi-image-gen Docker image (Debian Bookworm arm64)
+      # We run it --privileged so mmdebstrap can mount pseudo-filesystems
+      - name: Build rpi-image-gen container image
+        run: |
+          docker build \
+            --platform linux/arm64 \
+            -t rpi-image-gen-builder \
+            -f rpi-image/Dockerfile.builder \
+            .
+
+      - name: Build musica Pi image
+        run: |
+          mkdir -p output
+          docker run --rm \
+            --platform linux/arm64 \
+            --privileged \
+            -e ZEROTIER_NETWORK_ID=${{ secrets.ZEROTIER_NETWORK_ID || 'deadbeef12345678' }} \
+            -v ${{ github.workspace }}/rpi-image:/workspace/rpi-image \
+            -v ${{ github.workspace }}/output:/workspace/output \
+            rpi-image-gen-builder \
+            bash -c "
+              cd /workspace/rpi-image-gen && \
+              ./rpi-image-gen build \
+                -S /workspace/rpi-image \
+                -c /workspace/rpi-image/config/musica-pi5.yaml \
+                -o /workspace/output
+            "
+
+      # Smoke test: verify the image was produced and is a reasonable size
+      - name: Smoke test — image exists and is plausibly sized
+        run: |
+          IMG=$(find output -name "*.img" | head -1)
+          if [ -z "$IMG" ]; then
+            echo "ERROR: No .img file found in output/"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$IMG")
+          echo "Image: $IMG  Size: $SIZE bytes"
+          # Expect at least 500 MB
+          if [ "$SIZE" -lt 524288000 ]; then
+            echo "ERROR: Image is suspiciously small ($SIZE bytes)"
+            exit 1
+          fi
+          echo "PASS: Image looks healthy"
+
+      # Upload the image as a build artifact (only on main branch pushes)
+      - name: Upload image artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: musica-pi5-image
+          path: output/*.img
+          retention-days: 7

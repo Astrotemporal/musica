@@ -1,0 +1,65 @@
+# musica-pi5.yaml
+# rpi-image-gen top-level config for a Raspberry Pi 5 running the musica stack.
+# Targets: Debian Bookworm arm64, Pi 5 hardware.
+#
+# Build (on a native arm64 Debian/Bookworm host or privileged Docker container):
+#   ./rpi-image-gen build -S /workspace/rpi-image -c rpi-image/config/musica-pi5.yaml
+#
+# See companion README for x86/Docker/CI build instructions.
+
+# ---------------------------------------------------------------------------
+# Base profile — pulls in Debian Bookworm minbase + RPi kernel + boot firmware
+# ---------------------------------------------------------------------------
+include:
+  file: bookworm-minbase.cfg   # built-in rpi-image-gen base config
+
+# ---------------------------------------------------------------------------
+# Hardware target
+# ---------------------------------------------------------------------------
+device: pi5                    # built-in device profile for Raspberry Pi 5
+
+# ---------------------------------------------------------------------------
+# Image layout — single MBR image: 256 MB FAT boot + ext4 root (8 GB)
+# Adjust root_size upward if your music library lives on the SD card itself;
+# for most setups an external USB drive is recommended instead.
+# ---------------------------------------------------------------------------
+image:
+  name: musica-pi5
+  layout: compact              # built-in MBR dual-partition layout
+  boot_size: 256M
+  root_size: 8G
+
+# ---------------------------------------------------------------------------
+# Layers — ordered list; each resolves to ./rpi-image/config/layer/<name>.yaml
+# or a built-in rpi-image-gen layer if no local file is found.
+# ---------------------------------------------------------------------------
+layer:
+  # System essentials
+  - name: base-system          # sets locale, timezone, hostname
+  - name: ssh-enable           # enables sshd on first boot
+  - name: auto-login           # headless console auto-login (required for colima/systemd)
+
+  # Networking & VPN
+  - name: zerotier             # installs zerotier-one + systemd service
+
+  # Container runtime — the heart of the stack
+  - name: docker               # installs docker-ce + docker-compose-plugin + enables daemon
+
+  # First-boot orchestration
+  - name: musica-bootstrap     # drops docker-compose.yml + pull-and-start systemd service
+
+# ---------------------------------------------------------------------------
+# Top-level variable overrides
+# Secrets (ZT network ID, passwords) should be injected via env at build time
+# rather than committed to the repo — see README.
+# ---------------------------------------------------------------------------
+variables:
+  IGconf_device_hostname: metsa
+  IGconf_device_locale:   en_US.UTF-8
+  IGconf_device_timezone: America/New_York    # change to your TZ
+  IGconf_device_user1:    musica
+
+  # ZeroTier network ID — inject at build time:
+  #   ZEROTIER_NETWORK_ID=yournetid make build-docker
+  # Never commit a real network ID here.
+  IGconf_zerotier_network: "${ZEROTIER_NETWORK_ID}"

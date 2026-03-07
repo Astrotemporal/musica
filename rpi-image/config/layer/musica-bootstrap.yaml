@@ -1,0 +1,162 @@
+# layer/musica-bootstrap.yaml
+# Drops the musica docker-compose.yml onto the image and registers a systemd
+# service that pulls and starts all containers on first boot.
+# The compose file references images only — no build steps happen on the Pi.
+
+# --- METASTART ---
+# X-Layer-Name: musica-bootstrap
+# X-Layer-Description: Drops musica docker-compose stack and first-boot start service
+# X-Layer-Version: 1
+# --- METAEND ---
+
+mmdebstrap:
+  packages: []   # no extra apt packages needed beyond what docker layer provides
+
+  customize-hooks:
+    # Create the app directory
+    - mkdir -p "$1/opt/musica"
+
+    # Write the docker-compose.yml directly into the image
+    - |
+      cat > "$1/opt/musica/docker-compose.yml" << 'COMPOSEFILE'
+# ---------------------------------------------------------------------------
+# musica stack
+# All data lives under /opt/musica/data — mount an external USB drive there
+# for persistent storage across re-flashes.
+# ---------------------------------------------------------------------------
+
+services:
+
+  # -------------------------------------------------------------------------
+  # Navidrome — SubSonic-compatible music server
+  # UI: http://<zerotier-ip>:4533
+  # -------------------------------------------------------------------------
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      ND_SCANSCHEDULE: "1h"
+      ND_LOGLEVEL: "info"
+      ND_SESSIONTIMEOUT: "24h"
+      ND_BASEURL: ""
+      # Last.fm integration — set your keys in .env
+      ND_LASTFM_ENABLED: "${LASTFM_ENABLED:-false}"
+      ND_LASTFM_APIKEY: "${LASTFM_APIKEY:-}"
+      ND_LASTFM_SECRET: "${LASTFM_SECRET:-}"
+    volumes:
+      - /opt/musica/data/music:/music:ro         # read-only; DAB writes here
+      - /opt/musica/data/navidrome:/data
+    ports:
+      - "4533:4533"
+    networks:
+      - musica_net
+
+  # -------------------------------------------------------------------------
+  # DAB Downloader — yt-dlp backed music downloader
+  # Writes to the shared /music volume that Navidrome watches.
+  # -------------------------------------------------------------------------
+  dab:
+    image: ghcr.io/prathxmop/dab-downloader:latest
+    container_name: dab
+    restart: unless-stopped
+    volumes:
+      - /opt/musica/data/music:/downloads
+      - /opt/musica/data/dab-config:/config
+    ports:
+      - "8080:8080"
+    networks:
+      - musica_net
+
+  # -------------------------------------------------------------------------
+  # Caddy — reverse proxy stub
+  # Commented out: the Pi is on a ZeroTier-only network and won't have a public
+  # domain pointed at it. Access Navidrome directly at http://<zerotier-ip>:4533.
+  # Uncomment if you later expose this host publicly with a real domain.
+  # -------------------------------------------------------------------------
+  # caddy:
+  #   image: caddy:2-alpine
+  #   container_name: caddy
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /opt/musica/data/caddy:/data
+  #     - /opt/musica/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   depends_on:
+  #     - navidrome
+  #   networks:
+  #     - musica_net
+
+  # -------------------------------------------------------------------------
+  # Optional: analytics sidecar (uncomment when ready)
+  # -------------------------------------------------------------------------
+  # analytics:
+  #   image: ghcr.io/your-org/musica-analytics:latest
+  #   container_name: musica-analytics
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /opt/musica/data/analytics:/data
+  #   environment:
+  #     NAVIDROME_URL: "http://navidrome:4533"
+  #     NAVIDROME_USER: "${NAVIDROME_ADMIN_USER}"
+  #     NAVIDROME_PASS: "${NAVIDROME_ADMIN_PASS}"
+  #   ports:
+  #     - "3000:3000"
+  #   networks:
+  #     - musica_net
+
+networks:
+  musica_net:
+    driver: bridge
+COMPOSEFILE
+
+    # Write a default Caddyfile stub (reference only — Caddy is not started)
+    - |
+      mkdir -p "$1/opt/musica/caddy"
+      cat > "$1/opt/musica/caddy/Caddyfile" << 'CADDYFILE'
+# Caddyfile stub — Caddy is not started by default on the Pi.
+# Uncomment the caddy service in docker-compose.yml and replace :80 with your
+# domain to get automatic HTTPS via Let's Encrypt.
+# :80 {
+#   reverse_proxy navidrome:4533
+# }
+CADDYFILE
+
+    # Write an .env template — user fills this in before first boot
+    - |
+      cat > "$1/opt/musica/.env.template" << 'ENVFILE'
+# Copy this to .env and fill in your values before booting.
+LASTFM_ENABLED=true
+LASTFM_APIKEY=
+LASTFM_SECRET=
+NAVIDROME_ADMIN_USER=admin
+NAVIDROME_ADMIN_PASS=changeme
+ENVFILE
+
+    # Systemd service: pull images and start the stack on first boot
+    - |
+      cat > "$1/etc/systemd/system/musica-start.service" << 'UNIT'
+[Unit]
+Description=Start musica docker-compose stack on first boot
+After=docker.service network-online.target
+Wants=network-online.target
+ConditionPathExists=!/opt/musica/.stack-started
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/musica
+# Copy env template if .env doesn't exist yet
+ExecStartPre=/bin/sh -c '[ -f /opt/musica/.env ] || cp /opt/musica/.env.template /opt/musica/.env'
+ExecStart=/usr/bin/docker compose pull
+ExecStart=/usr/bin/docker compose up -d
+ExecStartPost=/usr/bin/touch /opt/musica/.stack-started
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+    - $BDEBSTRAP_HOOKS/enable-units "$1" musica-start

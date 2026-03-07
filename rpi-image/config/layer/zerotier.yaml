@@ -1,0 +1,59 @@
+# layer/zerotier.yaml
+# Installs ZeroTier One and auto-joins a network on first boot.
+# Reads IGconf_zerotier_network for the network ID.
+
+# --- METASTART ---
+# X-Layer-Name: zerotier
+# X-Layer-Description: Installs ZeroTier One VPN and joins a network on first boot
+# X-Layer-Version: 1
+# X-Env-Var-zerotier_network-Description: ZeroTier network ID to join on first boot
+# X-Env-Var-zerotier_network-Required: y
+# X-Env-Var-zerotier_network-Valid: regex:^[0-9a-f]{16}$
+# X-Env-Var-zerotier_network-Set: n
+# --- METAEND ---
+
+mmdebstrap:
+  packages:
+    - curl
+    - gnupg
+
+  customize-hooks:
+    # Install ZeroTier via the official apt repository (chroot-safe, no pipe-to-bash)
+    - |
+      curl -fsSL 'https://raw.githubusercontent.com/zerotier/ZeroTierOne/main/doc/contact%40zerotier.com.gpg' \
+        | gpg --dearmor > "$1/etc/apt/trusted.gpg.d/zerotier.gpg"
+      echo "deb https://download.zerotier.com/debian/bookworm bookworm main" \
+        > "$1/etc/apt/sources.list.d/zerotier.list"
+      chroot "$1" apt-get update -qq
+      chroot "$1" apt-get install -y zerotier-one
+      chroot "$1" systemctl enable zerotier-one
+
+    # Drop a first-boot join script so the network ID doesn't need to be
+    # hardcoded into the image (systemd oneshot runs zerotier-join on first boot)
+    - |
+      NETWORK_ID="$IGconf_zerotier_network"
+      cat > "$1/usr/local/bin/zerotier-join-network" << EOF
+#!/bin/sh
+zerotier-cli join ${NETWORK_ID}
+# Disable self after first successful join
+systemctl disable zerotier-join-network.service
+EOF
+      chmod +x "$1/usr/local/bin/zerotier-join-network"
+
+    - |
+      cat > "$1/etc/systemd/system/zerotier-join-network.service" << 'EOF'
+[Unit]
+Description=Join ZeroTier network on first boot
+After=zerotier-one.service network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/zerotier-one/networks.d/*.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/zerotier-join-network
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+      chroot "$1" systemctl enable zerotier-join-network.service

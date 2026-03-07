@@ -1,0 +1,95 @@
+# deployment/docker-compose.yml
+# Standalone compose file for dev use or deploying on an existing Pi.
+# NOT the same as the compose baked into the image by musica-bootstrap.yaml —
+# this one uses relative paths and environment variable defaults suitable for
+# running from a cloned repo directory.
+#
+# Usage:
+#   cp .env.example .env   # fill in secrets
+#   MUSIC_DIR=/path/to/music docker compose up -d
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Navidrome — SubSonic-compatible music server
+  # UI: http://localhost:4533  (or http://<zerotier-ip>:4533 remotely)
+  # ---------------------------------------------------------------------------
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      ND_SCANSCHEDULE: "1h"
+      ND_LOGLEVEL: "info"
+      ND_SESSIONTIMEOUT: "24h"
+      ND_BASEURL: ""
+      # Last.fm integration — disabled by default; set keys in .env to enable
+      ND_LASTFM_ENABLED: "${LASTFM_ENABLED:-false}"
+      ND_LASTFM_APIKEY: "${LASTFM_APIKEY:-}"
+      ND_LASTFM_SECRET: "${LASTFM_SECRET:-}"
+    volumes:
+      - ${MUSIC_DIR:-./music}:/music:ro     # read-only; DAB writes here
+      - ./data/navidrome:/data
+    ports:
+      - "4533:4533"
+    networks:
+      - musica_net
+
+  # ---------------------------------------------------------------------------
+  # DAB Downloader — yt-dlp backed music downloader
+  # Writes to the shared music directory that Navidrome watches.
+  # ---------------------------------------------------------------------------
+  dab:
+    image: ghcr.io/prathxmop/dab-downloader:latest
+    container_name: dab
+    restart: unless-stopped
+    volumes:
+      - ${MUSIC_DIR:-./music}:/downloads
+      - ./data/dab-config:/config
+    ports:
+      - "8080:8080"
+    networks:
+      - musica_net
+
+  # ---------------------------------------------------------------------------
+  # Caddy — reverse proxy stub
+  # Commented out: not suitable for the Pi's ZeroTier-only network environment.
+  # Uncomment if deploying on a host with a real public domain.
+  # ---------------------------------------------------------------------------
+  # caddy:
+  #   image: caddy:2-alpine
+  #   container_name: caddy
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./data/caddy:/data
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   depends_on:
+  #     - navidrome
+  #   networks:
+  #     - musica_net
+
+  # ---------------------------------------------------------------------------
+  # Optional: analytics sidecar (uncomment when ready)
+  # ---------------------------------------------------------------------------
+  # analytics:
+  #   image: ghcr.io/your-org/musica-analytics:latest
+  #   container_name: musica-analytics
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./data/analytics:/data
+  #   environment:
+  #     NAVIDROME_URL: "http://navidrome:4533"
+  #     NAVIDROME_USER: "${NAVIDROME_ADMIN_USER}"
+  #     NAVIDROME_PASS: "${NAVIDROME_ADMIN_PASS}"
+  #   ports:
+  #     - "3000:3000"
+  #   networks:
+  #     - musica_net
+
+networks:
+  musica_net:
+    driver: bridge
