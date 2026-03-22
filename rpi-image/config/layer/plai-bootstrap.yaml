@@ -1,0 +1,128 @@
+# layer/plai-bootstrap.yaml
+# Registers this Pi5 node with the PLAI graph on first boot (after ZeroTier joins).
+# Drops plai-bootstrap.yaml to /opt/plai/ and fires a oneshot registration service.
+# No PLAI server runs on the Pi — this is a thin edge client that registers into
+# graph:project_scope on the M5/work node via HTTP POST.
+#
+# musica.1 — Phase 17 Fork C, first branch instantiation of plai-bootstrap v0.1
+
+# METABEGIN
+# X-Env-Layer-Name: plai-bootstrap
+# X-Env-Layer-Desc: PLAI node registration on first boot via plai_scope register
+# X-Env-Layer-Version: 0.1.0
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - curl
+    - python3
+
+  customize-hooks:
+    # Create app directory
+    - mkdir -p "$1/opt/plai"
+
+    # Drop the plai-bootstrap.yaml config (v0.1 schema — matches plai/config/musica_bootstrap.yaml)
+    - |
+      cat > "$1/opt/plai/plai-bootstrap.yaml" << 'BOOTSTRAP'
+      interface_version: "0.1"
+      branch_id: "musica"
+      node_id: "node-pi"
+      capabilities:
+        - edge
+        - musica
+        - navidrome
+        - dab_downloader
+        - mcp_proxy
+      named_graphs:
+        - "graph:musica_library"
+        - "graph:musica_queue"
+      reward_cap: 0.5
+      description: >
+        musica: self-hosted music stack on Raspberry Pi 5.
+        Navidrome + DAB Downloader + ZeroTier + PLAI edge registration.
+      BOOTSTRAP
+
+    # Registration script — fires once ZeroTier has joined and network is online
+    - |
+      cat > "$1/opt/plai/register.sh" << 'SCRIPT'
+      #!/bin/bash
+      # plai-register.sh — Register node-pi with PLAI on first boot.
+      # Reads PLAI_SERVER_URL from musica.env (FAT32 boot partition).
+      # Requires: ZeroTier joined, PLAI server reachable on ZeroTier mesh.
+      set -euo pipefail
+
+      ENV_FILE="/boot/firmware/musica.env"
+      [ -f "$ENV_FILE" ] && source "$ENV_FILE"
+
+      PLAI_SERVER_URL="${PLAI_SERVER_URL:-}"
+      if [ -z "$PLAI_SERVER_URL" ]; then
+        echo "[plai-register] PLAI_SERVER_URL not set in musica.env — skipping registration"
+        exit 0
+      fi
+
+      # Wait for ZeroTier to get a network address (max 60s)
+      echo "[plai-register] Waiting for ZeroTier address..."
+      for i in $(seq 1 12); do
+        ZT_IP=$(zerotier-cli listnetworks 2>/dev/null | awk 'NR>1 {print $9}' | grep -Ev '^-$' | head -1 | cut -d/ -f1)
+        [ -n "$ZT_IP" ] && break
+        sleep 5
+      done
+
+      if [ -z "${ZT_IP:-}" ]; then
+        echo "[plai-register] ZeroTier not ready after 60s — skipping registration"
+        exit 0
+      fi
+
+      echo "[plai-register] ZeroTier up at $ZT_IP — registering with PLAI at $PLAI_SERVER_URL"
+
+      # JSON-RPC call to plai_scope(action="register")
+      PAYLOAD=$(python3 -c "
+      import json
+      print(json.dumps({
+        'jsonrpc': '2.0', 'id': 1,
+        'method': 'tools/call',
+        'params': {
+          'name': 'plai_scope',
+          'arguments': {
+            'action': 'register',
+            'bootstrap_path': '/opt/plai/plai-bootstrap.yaml'
+          }
+        }
+      }))
+      ")
+
+      RESPONSE=$(curl -sf -X POST "$PLAI_SERVER_URL/mcp" \
+        -H "Content-Type: application/json" \
+        -d "$PAYLOAD" 2>&1) || {
+        echo "[plai-register] Registration failed — server unreachable at $PLAI_SERVER_URL"
+        exit 0
+      }
+
+      echo "[plai-register] Registration response: $RESPONSE"
+      echo "[plai-register] node-pi registered in graph:project_scope"
+      SCRIPT
+
+    - chmod +x "$1/opt/plai/register.sh"
+
+    # Systemd oneshot: run after zerotier-join-network, mark done with sentinel file
+    - |
+      cat > "$1/etc/systemd/system/plai-register.service" << 'UNIT'
+      [Unit]
+      Description=Register node-pi with PLAI graph on first boot
+      After=zerotier-join-network.service network-online.target
+      Wants=network-online.target
+      ConditionPathExists=!/opt/plai/.registered
+
+      [Service]
+      Type=oneshot
+      ExecStart=/opt/plai/register.sh
+      ExecStartPost=/usr/bin/touch /opt/plai/.registered
+      RemainAfterExit=yes
+      StandardOutput=journal
+      StandardError=journal
+
+      [Install]
+      WantedBy=multi-user.target
+      UNIT
+
+    - $BDEBSTRAP_HOOKS/enable-units "$1" plai-register

@@ -33,6 +33,7 @@ layer:
   zerotier: zerotier
   docker: docker
   musica_bootstrap: musica-bootstrap
+  plai_bootstrap: plai-bootstrap
 
 # ---------------------------------------------------------------------------
 # Device / system variables
