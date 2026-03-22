@@ -17,7 +17,7 @@ name: Build musica Pi Image
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/plai-bootstrap]
     paths:
       - 'rpi-image/**'
       - '.github/workflows/build-image.yml'
@@ -161,7 +161,7 @@ jobs:
 
       # Upload the image as a downloadable artifact (only on main branch pushes)
       - name: Upload image artifact
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@v7
         with:
           name: musica-pi5-image
