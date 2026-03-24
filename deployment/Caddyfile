@@ -1,0 +1,3 @@
+music.plai.do {
+    reverse_proxy navidrome:4533
+}

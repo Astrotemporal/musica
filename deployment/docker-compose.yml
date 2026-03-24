@@ -1,5 +1,5 @@
 # deployment/docker-compose.yml
-# Standalone compose file for dev use or deploying on an existing Pi.
+# Standalone compose file for dev use or deploying on an existing Pi/node.
 # NOT the same as the compose baked into the image by musica-bootstrap.yaml —
 # this one uses relative paths and environment variable defaults suitable for
 # running from a cloned repo directory.
@@ -29,7 +29,7 @@ services:
       ND_LASTFM_APIKEY: "${LASTFM_APIKEY:-}"
       ND_LASTFM_SECRET: "${LASTFM_SECRET:-}"
     volumes:
-      - ${MUSIC_DIR:-./music}:/music:ro     # read-only; DAB writes here
+      - ${MUSIC_DIR:-./music}:/music:ro     # read-only; downloaders write here
       - ./data/navidrome:/data
     ports:
       - "4533:4533"
@@ -37,40 +37,89 @@ services:
       - musica_net
 
   # ---------------------------------------------------------------------------
-  # DAB Downloader — yt-dlp backed music downloader
+  # DAB Downloader — yt-dlp backed music downloader (on-demand search+download)
   # Writes to the shared music directory that Navidrome watches.
   # ---------------------------------------------------------------------------
+  # DAB is a CLI tool (not a long-running server). Use via:
+  #   docker compose run --rm dab search "Artist Name"
+  #   docker compose run --rm dab download <track-id>
   dab:
-    image: ghcr.io/prathxmop/dab-downloader:latest
+    image: prathxm/dab-downloader:latest
     container_name: dab
-    restart: unless-stopped
+    profiles:
+      - cli                               # not started by default; use `docker compose run`
     volumes:
       - ${MUSIC_DIR:-./music}:/downloads
       - ./data/dab-config:/config
-    ports:
-      - "8080:8080"
     networks:
       - musica_net
 
   # ---------------------------------------------------------------------------
-  # Caddy — reverse proxy stub
-  # Commented out: not suitable for the Pi's ZeroTier-only network environment.
-  # Uncomment if deploying on a host with a real public domain.
+  # Lidarr — music library manager (automated "wanted" lists + import)
+  # Monitors artists/albums, triggers downloads via slskd, imports to music dir.
+  # UI: http://localhost:8686
   # ---------------------------------------------------------------------------
-  # caddy:
-  #   image: caddy:2-alpine
-  #   container_name: caddy
-  #   restart: unless-stopped
-  #   volumes:
-  #     - ./data/caddy:/data
-  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   depends_on:
-  #     - navidrome
-  #   networks:
-  #     - musica_net
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    restart: unless-stopped
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "${TZ:-America/Los_Angeles}"
+    volumes:
+      - ./data/lidarr:/config
+      - ${MUSIC_DIR:-./music}:/music
+      - ./data/downloads:/downloads       # slskd downloads land here; Lidarr imports
+    ports:
+      - "8686:8686"
+    networks:
+      - musica_net
+
+  # ---------------------------------------------------------------------------
+  # slskd — Soulseek daemon with REST API + web UI
+  # P2P music network. Lidarr searches via Tubifarry/Soularr plugin.
+  # UI: http://localhost:5030
+  # ---------------------------------------------------------------------------
+  slskd:
+    image: slskd/slskd:latest
+    container_name: slskd
+    restart: unless-stopped
+    environment:
+      SLSKD_REMOTE_CONFIGURATION: "true"
+      SLSKD_SLSK_USERNAME: "${SOULSEEK_USER:-}"
+      SLSKD_SLSK_PASSWORD: "${SOULSEEK_PASS:-}"
+    volumes:
+      - ./data/slskd:/app
+      - ./data/downloads:/downloads       # shared with Lidarr
+      - ${MUSIC_DIR:-./music}:/music:ro   # for sharing back to network
+    ports:
+      - "5030:5030"
+      - "50300:50300"                     # Soulseek listen port
+    networks:
+      - musica_net
+
+  # ---------------------------------------------------------------------------
+  # Caddy — reverse proxy
+  # Enable for public HTTPS access (music.plai.do). Requires DNS + port forward.
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    profiles:
+      - public                            # only starts with --profile public
+    volumes:
+      - ./data/caddy:/data
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    depends_on:
+      - navidrome
+    networks:
+      - musica_net
 
   # ---------------------------------------------------------------------------
   # Optional: analytics sidecar (uncomment when ready)

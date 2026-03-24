@@ -57,7 +57,7 @@ mmdebstrap:
         # DAB Downloader — yt-dlp backed music downloader
         # -------------------------------------------------------------------------
         dab:
-          image: ghcr.io/prathxmop/dab-downloader:latest
+          image: prathxm/dab-downloader:latest
           container_name: dab
           restart: unless-stopped
           volumes:

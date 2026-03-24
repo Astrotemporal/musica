@@ -3,3 +3,8 @@ output/
 
 # rpi-image-gen tool (cloned locally for native arm64 builds)
 rpi-image-gen/
+
+# Runtime data (container volumes, downloads, config state)
+deployment/data/
+deployment/music/
+deployment/.env
