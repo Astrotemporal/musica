@@ -77,9 +77,10 @@ services:
       MUSIC_DIR: "/music"
       ENABLE_MUSICBRAINZ: "true"
       DEFAULT_CONVERT_TO_FLAC: "true"
-      NAVIDROME_URL: "http://navidrome:4533"
-      NAVIDROME_USER: "${NAVIDROME_ADMIN_USER:-}"
-      NAVIDROME_PASS: "${NAVIDROME_ADMIN_PASS:-}"
+      # Navidrome integration configured via MusicGrabber Settings UI
+      # (env vars lock the UI fields; use the Settings tab instead so you
+      #  can test the connection and enter your actual Navidrome creds)
+      # URL from inside Docker network: http://navidrome:4533
     expose:
       - "8080"
     volumes:
