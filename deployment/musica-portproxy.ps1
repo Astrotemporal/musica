@@ -38,7 +38,8 @@ Info "WSL2 IP: $wslIp"
 
 # -- Ports to forward -------------------------------------------------------
 $ports = @(
-    @{ listen=4533;  connect=4533;  name="Musica Gateway";     desc="Caddy gateway: / Navidrome, /grab/ MusicGrabber" },
+    @{ listen=4533;  connect=4533;  name="Musica Navidrome";    desc="Navidrome music server (via Caddy)" },
+    @{ listen=7171;  connect=7171;  name="Musica MusicGrabber"; desc="MusicGrabber download UI (via Caddy)" },
     @{ listen=8686;  connect=8686;  name="Musica Lidarr";      desc="Lidarr music manager (admin)" },
     @{ listen=5030;  connect=5030;  name="Musica slskd";       desc="Soulseek daemon (admin)" },
     @{ listen=80;    connect=80;    name="Musica Caddy HTTP";  desc="Caddy HTTP (ACME challenge)" },

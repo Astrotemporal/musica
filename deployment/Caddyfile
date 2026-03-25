@@ -1,27 +1,14 @@
-# Local + ZeroTier gateway (HTTP on :4533)
+# Navidrome — local + ZeroTier (primary gateway)
 :4533 {
-    handle /grab/* {
-        uri strip_prefix /grab
-        reverse_proxy musicgrabber:8080
-    }
-    handle /grab {
-        redir /grab/ permanent
-    }
-    handle {
-        reverse_proxy navidrome:4533
-    }
+    reverse_proxy navidrome:4533
+}
+
+# MusicGrabber — local + ZeroTier (download UI)
+:7171 {
+    reverse_proxy musicgrabber:8080
 }
 
 # Public HTTPS (music.plai.do) — requires DNS + router port forward
 music.plai.do {
-    handle /grab/* {
-        uri strip_prefix /grab
-        reverse_proxy musicgrabber:8080
-    }
-    handle /grab {
-        redir /grab/ permanent
-    }
-    handle {
-        reverse_proxy navidrome:4533
-    }
+    reverse_proxy navidrome:4533
 }

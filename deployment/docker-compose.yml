@@ -28,7 +28,8 @@ services:
       - ./data/caddy:/data
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
-      - "4533:4533"                         # local + ZeroTier entry point
+      - "4533:4533"                         # Navidrome (local + ZeroTier)
+      - "7171:7171"                         # MusicGrabber (local + ZeroTier)
       - "80:80"                             # public HTTPS (ACME challenge)
       - "443:443"                           # public HTTPS (music.plai.do)
       - "443:443/udp"                       # HTTP/3
