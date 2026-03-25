@@ -26,8 +26,8 @@ config: $(ENV_FILE) ## Generate DAB config.json from .env + template (no secrets
 	  $(DEPLOY)/dab-config.template.json > $(DEPLOY)/data/dab-config/config.json
 	@echo "✓ DAB config.json generated from .env"
 
-up: ## Start core services (navidrome + lidarr + slskd)
-	$(COMPOSE) up -d navidrome lidarr slskd
+up: ## Start core services (navidrome + musicgrabber + lidarr + slskd)
+	$(COMPOSE) up -d navidrome musicgrabber lidarr slskd
 
 up-public: up ## Start all services including Caddy (public HTTPS)
 	$(COMPOSE) --profile public up -d caddy
@@ -35,12 +35,20 @@ up-public: up ## Start all services including Caddy (public HTTPS)
 down: ## Stop all services
 	$(COMPOSE) --profile public --profile cli down
 
-dab: ## Run DAB CLI (pass args after --). Example: make dab -- search "Radiohead"
-	$(COMPOSE) --profile cli run --rm -it dab $(filter-out $@,$(MAKECMDGOALS))
+dab-search: ## Search DAB interactively. Usage: make dab-search q="Artist or Song"
+	$(COMPOSE) --profile cli run --rm -it dab search "$(q)"
 
-# Swallow extra args passed to `make dab`
-%:
-	@:
+dab-download: ## Download by ID. Usage: make dab-download id="<track-id>"
+	$(COMPOSE) --profile cli run --rm dab download "$(id)"
+
+dab-status: ## Check DAB login status
+	$(COMPOSE) --profile cli run --rm dab status
+
+dab-login: ## Login to DAB. Usage: make dab-login email="you@email.com" pass="password"
+	$(COMPOSE) --profile cli run --rm dab login "$(email)" "$(pass)"
+
+dab: ## Run arbitrary DAB command. Usage: make dab cmd="search Radiohead"
+	$(COMPOSE) --profile cli run --rm -it dab $(cmd)
 
 # ── RPi Image Build ────────────────────────────────────────────────────
 

@@ -55,6 +55,35 @@ services:
       - musica_net
 
   # ---------------------------------------------------------------------------
+  # MusicGrabber — on-demand search + download UI
+  # Searches YouTube, SoundCloud, Monochrome/Tidal in parallel.
+  # Downloads best quality as FLAC. Auto-triggers Navidrome rescan.
+  # UI: http://localhost:7171
+  # ---------------------------------------------------------------------------
+  musicgrabber:
+    image: g33kphr33k/musicgrabber:latest
+    container_name: musicgrabber
+    restart: unless-stopped
+    shm_size: '2gb'                         # Chromium headless needs this for large playlists
+    environment:
+      MUSIC_DIR: "/music"
+      ENABLE_MUSICBRAINZ: "true"
+      DEFAULT_CONVERT_TO_FLAC: "true"
+      NAVIDROME_URL: "http://navidrome:4533"
+      NAVIDROME_USER: "${NAVIDROME_ADMIN_USER:-}"
+      NAVIDROME_PASS: "${NAVIDROME_ADMIN_PASS:-}"
+    volumes:
+      - ${MUSIC_DIR:-./music}:/music
+      - ./data/musicgrabber:/data
+      - ./data/downloads:/downloads         # slskd integration (optional)
+    ports:
+      - "7171:8080"
+    depends_on:
+      - navidrome
+    networks:
+      - musica_net
+
+  # ---------------------------------------------------------------------------
   # Lidarr — music library manager (automated "wanted" lists + import)
   # Monitors artists/albums, triggers downloads via slskd, imports to music dir.
   # UI: http://localhost:8686
