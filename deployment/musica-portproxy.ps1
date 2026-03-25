@@ -1,5 +1,5 @@
-# musica-portproxy.ps1 — Windows portproxy + firewall for musica services
-# Run as Administrator. Idempotent — safe to re-run.
+# musica-portproxy.ps1 -- Windows portproxy + firewall for musica services
+# Run as Administrator. Idempotent -- safe to re-run.
 #
 # Forwards musica ports from Windows interfaces (LAN + ZeroTier) into WSL2.
 # WSL2's IP changes on restart; run this script after each boot or register
@@ -22,21 +22,21 @@ function Warn { param($msg) Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
 function Info { param($msg) Write-Host "  [INFO] $msg" }
 
 Write-Host ""
-Write-Host "musica portproxy — Windows → WSL2" -ForegroundColor Cyan
-Write-Host "==================================" -ForegroundColor Cyan
+Write-Host "musica portproxy -- Windows -> WSL2" -ForegroundColor Cyan
+Write-Host "====================================" -ForegroundColor Cyan
 
-# ── Get WSL2 IP ────────────────────────────────────────────────────────
+# -- Get WSL2 IP -----------------------------------------------------------
 $wslIp = (wsl hostname -I 2>$null)
 if ($wslIp) { $wslIp = $wslIp.Trim().Split()[0] }
 
 if (-not $wslIp) {
-    Warn "WSL2 is not running — cannot configure portproxy."
+    Warn "WSL2 is not running -- cannot configure portproxy."
     Write-Host "  Start WSL first: wsl"
     exit 1
 }
 Info "WSL2 IP: $wslIp"
 
-# ── Ports to forward ──────────────────────────────────────────────────
+# -- Ports to forward -------------------------------------------------------
 $ports = @(
     @{ listen=4533;  connect=4533;  name="Musica Navidrome";   desc="Navidrome music server" },
     @{ listen=8686;  connect=8686;  name="Musica Lidarr";      desc="Lidarr music manager" },
@@ -46,17 +46,17 @@ $ports = @(
     @{ listen=443;   connect=443;   name="Musica Caddy HTTPS"; desc="Caddy HTTPS (music.plai.do)" }
 )
 
-# ── Portproxy rules ───────────────────────────────────────────────────
+# -- Portproxy rules --------------------------------------------------------
 Write-Host ""
 Write-Host "Portproxy rules:" -ForegroundColor Cyan
 foreach ($p in $ports) {
     netsh interface portproxy delete v4tov4 listenport=$($p.listen) listenaddress=0.0.0.0 2>$null | Out-Null
     netsh interface portproxy add    v4tov4 listenport=$($p.listen) listenaddress=0.0.0.0 `
         connectport=$($p.connect) connectaddress=$wslIp | Out-Null
-    Ok "$($p.name): 0.0.0.0:$($p.listen) → ${wslIp}:$($p.connect)"
+    Ok "$($p.name): 0.0.0.0:$($p.listen) -> ${wslIp}:$($p.connect)"
 }
 
-# ── Firewall rules (idempotent) ───────────────────────────────────────
+# -- Firewall rules (idempotent) --------------------------------------------
 Write-Host ""
 Write-Host "Firewall rules:" -ForegroundColor Cyan
 foreach ($p in $ports) {
@@ -70,7 +70,7 @@ foreach ($p in $ports) {
     }
 }
 
-# ── Scheduled task registration ───────────────────────────────────────
+# -- Scheduled task registration ---------------------------------------------
 if ($Register) {
     Write-Host ""
     Write-Host "Scheduled task:" -ForegroundColor Cyan
@@ -90,7 +90,7 @@ if ($Register) {
     }
 }
 
-# ── Summary ───────────────────────────────────────────────────────────
+# -- Summary -----------------------------------------------------------------
 Write-Host ""
 Write-Host "Done. Musica services accessible from LAN and ZeroTier:" -ForegroundColor Green
 Write-Host "  Navidrome:  http://<ip>:4533"
