@@ -38,10 +38,12 @@ mmdebstrap:
       #!/bin/sh
       set -e
 
-      ENV_FILE=/boot/firmware/musica.env
+      # Try plai.env first (PLAI image), fall back to musica.env (musica image)
+      ENV_FILE=/boot/firmware/plai.env
+      [ -f "$ENV_FILE" ] || ENV_FILE=/boot/firmware/musica.env
       if [ ! -f "$ENV_FILE" ]; then
-        echo "zerotier-join: $ENV_FILE not found — skipping network join" >&2
-        echo "  Create $ENV_FILE with ZEROTIER_NETWORK_ID=<your-16-char-id>" >&2
+        echo "zerotier-join: No env file found — skipping network join" >&2
+        echo "  Create plai.env or musica.env on boot partition with ZEROTIER_NETWORK_ID=<id>" >&2
         exit 0
       fi
 

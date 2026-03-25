@@ -1,0 +1,82 @@
+# layer/unifi.yaml
+# Deploys the UniFi Network Application + MongoDB as Docker containers.
+# For managing Ubiquiti network gear (switches, APs) from the Pi5.
+#
+# The UniFi controller binds to the host network (--net=host) so it can
+# discover Ubiquiti devices on the local LAN via L2 broadcast.
+#
+# Ports: 8443 (HTTPS UI), 8080 (device inform), 3478/udp (STUN)
+
+# METABEGIN
+# X-Env-Layer-Name: unifi
+# X-Env-Layer-Desc: UniFi Network Application + MongoDB for Ubiquiti device management
+# X-Env-Layer-Version: 1.0.0
+# METAEND
+---
+mmdebstrap:
+  packages: []   # docker layer provides all needed packages
+
+  customize-hooks:
+    # Create app directory
+    - mkdir -p "$1/opt/unifi"
+
+    # Write the docker-compose.yml for UniFi + MongoDB
+    - |
+      cat > "$1/opt/unifi/docker-compose.yml" << 'COMPOSEFILE'
+      # UniFi Network Application + MongoDB
+      # Data persists under /opt/unifi/data/
+
+      services:
+        mongodb:
+          image: mongo:7
+          container_name: unifi-mongodb
+          restart: unless-stopped
+          volumes:
+            - /opt/unifi/data/mongodb:/data/db
+          command: mongod --quiet --logpath /dev/null
+
+        unifi:
+          image: lscr.io/linuxserver/unifi-network-application:latest
+          container_name: unifi
+          restart: unless-stopped
+          depends_on:
+            - mongodb
+          environment:
+            PUID: 1000
+            PGID: 1000
+            TZ: America/New_York
+            MONGO_HOST: mongodb
+            MONGO_PORT: 27017
+            MONGO_DBNAME: unifi
+          volumes:
+            - /opt/unifi/data/unifi:/config
+          ports:
+            - "8443:8443"   # HTTPS UI
+            - "8080:8080"   # Device inform
+            - "3478:3478/udp"  # STUN
+            - "10001:10001/udp"  # AP discovery
+          network_mode: bridge
+      COMPOSEFILE
+
+    # Systemd service: pull and start UniFi stack on first boot
+    - |
+      cat > "$1/etc/systemd/system/unifi-start.service" << 'UNIT'
+      [Unit]
+      Description=Start UniFi docker-compose stack on first boot
+      After=docker.service network-online.target
+      Wants=network-online.target
+      ConditionPathExists=!/opt/unifi/.stack-started
+
+      [Service]
+      Type=oneshot
+      WorkingDirectory=/opt/unifi
+      ExecStart=/usr/bin/docker compose pull
+      ExecStart=/usr/bin/docker compose up -d
+      ExecStartPost=/usr/bin/touch /opt/unifi/.stack-started
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+      UNIT
+
+    - $BDEBSTRAP_HOOKS/enable-units "$1" unifi-start

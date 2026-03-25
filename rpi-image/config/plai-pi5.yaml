@@ -1,0 +1,50 @@
+# plai-pi5.yaml
+# rpi-image-gen top-level config for a minimal PLAI node on Raspberry Pi 5.
+# Purpose: ZeroTier gateway + ZeroNS + UniFi controller + PLAI edge registration.
+# NOT a musica node — no Navidrome/DAB. For musica, use musica-pi5.yaml.
+#
+# Build (inside privileged Docker container):
+#   make build-docker IMAGE_CONFIG=plai-pi5
+#
+# After flashing, copy plai.env.template -> plai.env on the boot partition
+# and set ZEROTIER_NETWORK_ID, ZEROTIER_API_TOKEN, PLAI_SERVER_URL.
+
+# ---------------------------------------------------------------------------
+# Base profile — Debian Bookworm minbase + RPi kernel + boot firmware
+# ---------------------------------------------------------------------------
+include:
+  file: bookworm-minbase.yaml
+
+# ---------------------------------------------------------------------------
+# Image layout — MBR: 256 MB FAT boot + 8 GB ext4 root
+# ---------------------------------------------------------------------------
+image:
+  layer: image-rpios
+  name: plai-pi5
+  boot_part_size: 256M
+  root_part_size: 8G
+
+# ---------------------------------------------------------------------------
+# Layers — ordered; each resolves to ./rpi-image/config/layer/<name>.yaml
+#
+# zerotier  — VPN mesh (joins network from plai.env on first boot)
+# docker    — container runtime for UniFi stack
+# zerons    — DNS for ZeroTier members (*.zt resolution)
+# unifi     — UniFi Network Application + MongoDB (Ubiquiti device management)
+# plai_bootstrap — edge registration with PLAI graph on first boot
+# ---------------------------------------------------------------------------
+layer:
+  zerotier: zerotier
+  docker: docker
+  zerons: zerons
+  unifi: unifi
+  plai_bootstrap: plai-bootstrap-minimal
+
+# ---------------------------------------------------------------------------
+# Device / system
+# ---------------------------------------------------------------------------
+device:
+  hostname: plai-pi
+  locale: en_US.UTF-8
+  timezone: America/New_York
+  user1: plai

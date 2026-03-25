@@ -1,0 +1,97 @@
+# layer/zerons.yaml
+# Installs zeronsd (ZeroTier DNS) and registers a systemd service that starts
+# it after ZeroTier joins. Resolves all enrolled nodes as <member-name>.zt
+# on the ZeroTier network.
+#
+# Requires: ZT Central API token in plai.env (ZEROTIER_API_TOKEN).
+# zeronsd resolves member names from the ZT Central API.
+
+# METABEGIN
+# X-Env-Layer-Name: zerons
+# X-Env-Layer-Desc: ZeroNS DNS server for ZeroTier network member resolution
+# X-Env-Layer-Version: 1.0.0
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - curl
+
+  customize-hooks:
+    # Install zeronsd from GitHub releases (static musl binary for aarch64)
+    - |
+      ZERONSD_VERSION="0.5.2"
+      ZERONSD_URL="https://github.com/zerotier/zeronsd/releases/download/v${ZERONSD_VERSION}/zeronsd-linux-aarch64"
+      curl -fsSL "$ZERONSD_URL" -o "$1/usr/local/bin/zeronsd"
+      chmod +x "$1/usr/local/bin/zeronsd"
+
+    # ZeroNS start script: reads API token + network ID from plai.env
+    - |
+      cat > "$1/usr/local/bin/zerons-start" << 'SCRIPT'
+      #!/bin/sh
+      set -e
+
+      ENV_FILE=/boot/firmware/plai.env
+      [ -f "$ENV_FILE" ] && . "$ENV_FILE"
+
+      ZEROTIER_API_TOKEN="${ZEROTIER_API_TOKEN:-}"
+      ZEROTIER_NETWORK_ID="${ZEROTIER_NETWORK_ID:-}"
+      ZERONS_DOMAIN="${ZERONS_DOMAIN:-zt}"
+
+      if [ -z "$ZEROTIER_API_TOKEN" ]; then
+        echo "zerons-start: ZEROTIER_API_TOKEN not set in $ENV_FILE — skipping" >&2
+        exit 0
+      fi
+
+      if [ -z "$ZEROTIER_NETWORK_ID" ]; then
+        echo "zerons-start: ZEROTIER_NETWORK_ID not set in $ENV_FILE — skipping" >&2
+        exit 0
+      fi
+
+      # Wait for ZeroTier to have a network address (max 60s)
+      echo "zerons-start: Waiting for ZeroTier address..."
+      for i in $(seq 1 12); do
+        ZT_IP=$(zerotier-cli listnetworks 2>/dev/null | awk 'NR>1 {print $9}' | grep -Ev '^-$' | head -1 | cut -d/ -f1)
+        [ -n "$ZT_IP" ] && break
+        sleep 5
+      done
+
+      if [ -z "${ZT_IP:-}" ]; then
+        echo "zerons-start: ZeroTier not ready after 60s — skipping" >&2
+        exit 1
+      fi
+
+      echo "zerons-start: ZeroTier up at $ZT_IP — starting zeronsd for domain .$ZERONS_DOMAIN"
+
+      # Write token to a file (zeronsd reads from file, not env)
+      TOKEN_FILE=/var/lib/zerotier-one/zerons-token
+      echo "$ZEROTIER_API_TOKEN" > "$TOKEN_FILE"
+      chmod 600 "$TOKEN_FILE"
+
+      exec /usr/local/bin/zeronsd start \
+        --secret-file /var/lib/zerotier-one/authtoken.secret \
+        --token-file "$TOKEN_FILE" \
+        --domain "$ZERONS_DOMAIN" \
+        "$ZEROTIER_NETWORK_ID"
+      SCRIPT
+      chmod +x "$1/usr/local/bin/zerons-start"
+
+    # Systemd service: long-running DNS server
+    - |
+      cat > "$1/etc/systemd/system/zerons.service" << 'UNIT'
+      [Unit]
+      Description=ZeroNS — DNS for ZeroTier network members
+      After=zerotier-one.service zerotier-join-network.service network-online.target
+      Wants=network-online.target
+      Requires=zerotier-one.service
+
+      [Service]
+      Type=simple
+      ExecStart=/usr/local/bin/zerons-start
+      Restart=on-failure
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+      UNIT
+
+    - $BDEBSTRAP_HOOKS/enable-units "$1" zerons

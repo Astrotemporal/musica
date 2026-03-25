@@ -1,0 +1,125 @@
+# layer/plai-bootstrap-minimal.yaml
+# Registers this Pi5 as a minimal PLAI infrastructure node on first boot.
+# Unlike plai-bootstrap.yaml (musica-specific), this registers as a gateway
+# node with ZeroNS + UniFi capabilities only.
+#
+# Reads PLAI_SERVER_URL from /boot/firmware/plai.env.
+
+# METABEGIN
+# X-Env-Layer-Name: plai-bootstrap-minimal
+# X-Env-Layer-Desc: PLAI node registration (gateway role — no musica)
+# X-Env-Layer-Version: 0.1.0
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - curl
+    - python3
+
+  customize-hooks:
+    # Create app directory
+    - mkdir -p "$1/opt/plai"
+
+    # Drop the plai-bootstrap.yaml config (v0.1 schema)
+    - |
+      cat > "$1/opt/plai/plai-bootstrap.yaml" << 'BOOTSTRAP'
+      interface_version: "0.1"
+      branch_id: "plai-infra"
+      node_id: "node-pi"
+      capabilities:
+        - edge
+        - zerotier_gateway
+        - zerons
+        - unifi_controller
+        - mcp_proxy
+      named_graphs:
+        - "graph:project_scope"
+      reward_cap: 0.5
+      description: >
+        PLAI infrastructure node on Raspberry Pi 5.
+        ZeroTier gateway + ZeroNS DNS + UniFi controller + PLAI edge registration.
+      BOOTSTRAP
+
+    # Registration script — reads PLAI_SERVER_URL from plai.env
+    - |
+      cat > "$1/opt/plai/register.sh" << 'SCRIPT'
+      #!/bin/bash
+      # plai-register.sh — Register node-pi with PLAI on first boot.
+      set -euo pipefail
+
+      # Try plai.env first, fall back to musica.env
+      ENV_FILE="/boot/firmware/plai.env"
+      [ -f "$ENV_FILE" ] || ENV_FILE="/boot/firmware/musica.env"
+      [ -f "$ENV_FILE" ] && source "$ENV_FILE"
+
+      PLAI_SERVER_URL="${PLAI_SERVER_URL:-}"
+      if [ -z "$PLAI_SERVER_URL" ]; then
+        echo "[plai-register] PLAI_SERVER_URL not set — skipping registration"
+        exit 0
+      fi
+
+      # Wait for ZeroTier to get a network address (max 60s)
+      echo "[plai-register] Waiting for ZeroTier address..."
+      for i in $(seq 1 12); do
+        ZT_IP=$(zerotier-cli listnetworks 2>/dev/null | awk 'NR>1 {print $9}' | grep -Ev '^-$' | head -1 | cut -d/ -f1)
+        [ -n "$ZT_IP" ] && break
+        sleep 5
+      done
+
+      if [ -z "${ZT_IP:-}" ]; then
+        echo "[plai-register] ZeroTier not ready after 60s — skipping"
+        exit 0
+      fi
+
+      echo "[plai-register] ZeroTier up at $ZT_IP — registering with PLAI at $PLAI_SERVER_URL"
+
+      PAYLOAD=$(python3 -c "
+      import json
+      print(json.dumps({
+        'jsonrpc': '2.0', 'id': 1,
+        'method': 'tools/call',
+        'params': {
+          'name': 'plai_scope',
+          'arguments': {
+            'action': 'register',
+            'bootstrap_path': '/opt/plai/plai-bootstrap.yaml'
+          }
+        }
+      }))
+      ")
+
+      RESPONSE=$(curl -sf -X POST "$PLAI_SERVER_URL/mcp" \
+        -H "Content-Type: application/json" \
+        -d "$PAYLOAD" 2>&1) || {
+        echo "[plai-register] Registration failed — server unreachable"
+        exit 0
+      }
+
+      echo "[plai-register] Response: $RESPONSE"
+      echo "[plai-register] node-pi registered in graph:project_scope"
+      SCRIPT
+
+    - chmod +x "$1/opt/plai/register.sh"
+
+    # Systemd oneshot: run after zerotier-join-network
+    - |
+      cat > "$1/etc/systemd/system/plai-register.service" << 'UNIT'
+      [Unit]
+      Description=Register node-pi with PLAI graph on first boot
+      After=zerotier-join-network.service network-online.target
+      Wants=network-online.target
+      ConditionPathExists=!/opt/plai/.registered
+
+      [Service]
+      Type=oneshot
+      ExecStart=/opt/plai/register.sh
+      ExecStartPost=/usr/bin/touch /opt/plai/.registered
+      RemainAfterExit=yes
+      StandardOutput=journal
+      StandardError=journal
+
+      [Install]
+      WantedBy=multi-user.target
+      UNIT
+
+    - $BDEBSTRAP_HOOKS/enable-units "$1" plai-register
