@@ -50,7 +50,7 @@ services:
       - cli                               # not started by default; use `docker compose run`
     volumes:
       - ${MUSIC_DIR:-./music}:/downloads
-      - ./data/dab-config:/config
+      - ./data/dab-config:/app/config
     networks:
       - musica_net
 

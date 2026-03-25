@@ -1,11 +1,48 @@
-.PHONY: help build-rpi-image build-docker clean
-# ZeroTier network ID is no longer baked into the image at build time.
-# After flashing, copy musica.env.template -> musica.env on the boot partition
-# and set ZEROTIER_NETWORK_ID=<your-16-char-id>.
+.PHONY: help setup up down dab config build-rpi-image build-docker clean
+
+DEPLOY := deployment
+COMPOSE := docker compose -f $(DEPLOY)/docker-compose.yml
+ENV_FILE := $(DEPLOY)/.env
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
+
+# ── Deployment ──────────────────────────────────────────────────────────
+
+setup: $(ENV_FILE) config ## First-time setup: .env + data dirs + DAB config
+	@mkdir -p $(DEPLOY)/data/{navidrome,dab-config,lidarr,slskd,downloads} $(DEPLOY)/music
+	@echo "✓ Data directories created. Edit $(ENV_FILE) then run: make up"
+
+$(ENV_FILE):
+	cp $(DEPLOY)/.env.example $(ENV_FILE)
+	@echo "✓ Created $(ENV_FILE) — fill in your secrets"
+
+config: $(ENV_FILE) ## Generate DAB config.json from .env + template (no secrets in git)
+	@set -a && . $(ENV_FILE) && set +a && \
+	sed \
+	  -e "s|__NAVIDROME_ADMIN_USER__|$${NAVIDROME_ADMIN_USER}|g" \
+	  -e "s|__NAVIDROME_ADMIN_PASS__|$${NAVIDROME_ADMIN_PASS}|g" \
+	  $(DEPLOY)/dab-config.template.json > $(DEPLOY)/data/dab-config/config.json
+	@echo "✓ DAB config.json generated from .env"
+
+up: ## Start core services (navidrome + lidarr + slskd)
+	$(COMPOSE) up -d navidrome lidarr slskd
+
+up-public: up ## Start all services including Caddy (public HTTPS)
+	$(COMPOSE) --profile public up -d caddy
+
+down: ## Stop all services
+	$(COMPOSE) --profile public --profile cli down
+
+dab: ## Run DAB CLI (pass args after --). Example: make dab -- search "Radiohead"
+	$(COMPOSE) --profile cli run --rm -it dab $(filter-out $@,$(MAKECMDGOALS))
+
+# Swallow extra args passed to `make dab`
+%:
+	@:
+
+# ── RPi Image Build ────────────────────────────────────────────────────
 
 build-rpi-image: ## Build image on a native arm64 Debian/Pi host
 	./rpi-image-gen/rpi-image-gen build \
